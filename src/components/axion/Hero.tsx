@@ -215,7 +215,7 @@ export default function Hero() {
 
         <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row gap-4 sm:gap-5 items-start sm:items-center">
           <a
-            href="/demo"
+            href="/login"
             className="group bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[13px] sm:text-[14px] font-medium rounded-full pl-5 sm:pl-6 pr-2 py-2 flex items-center gap-3 transition-colors"
           >
             <RollText label="Try the live demo" />
