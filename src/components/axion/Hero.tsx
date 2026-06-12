@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Clock, Menu, ShieldCheck, XIcon } from "lucide-react";
+import { ArrowRight, Check, Clock, Menu, XIcon } from "lucide-react";
 import { ChromaFlow, FilmGrain, FlutedGlass, Shader, Swirl } from "shaders/react";
 import { GeminiLogo } from "@/components/trustflow/GeminiLogo";
 
@@ -47,13 +47,11 @@ function RollText({ label }: { label: string }) {
 
 function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <span className={`flex items-center gap-2 ${className}`}>
-      <span className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center">
-        <ShieldCheck size={16} className="text-[#34D399]" />
-      </span>
-      <span className="text-[18px] sm:text-[19px] font-semibold tracking-tight text-gray-900">
-        TrustFlow<span className="text-[#059669]"> AI</span>
-      </span>
+    <span
+      className={`relative inline-flex items-center text-[20px] sm:text-[22px] font-bold tracking-[-0.03em] text-[#0F766E] leading-none ${className}`}
+    >
+      Chëkd
+      <Check size={13} strokeWidth={4} className="absolute -top-1.5 -right-3 text-[#34D399]" />
     </span>
   );
 }
@@ -64,7 +62,7 @@ export default function Hero() {
 
   return (
     <section
-      className="relative flex flex-col min-h-[640px] sm:min-h-[720px] lg:min-h-screen"
+      className="relative flex flex-col min-h-0 sm:min-h-[720px] lg:min-h-screen"
       style={{ backgroundColor: "#EFEFEF" }}
     >
       {/* Shader stack */}
@@ -184,11 +182,11 @@ export default function Hero() {
         </div>
       )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      {/* Spacer — only pushes content down from sm up; on mobile content sits near the nav */}
+      <div className="hidden sm:block flex-1" />
 
       {/* Hero content */}
-      <div className="relative z-20 mx-auto w-full max-w-[1440px] px-5 sm:px-8 lg:px-12 pb-14 sm:pb-16 lg:pb-20">
+      <div className="relative z-20 mx-auto w-full max-w-[1440px] px-5 sm:px-8 lg:px-12 pt-10 sm:pt-0 pb-14 sm:pb-16 lg:pb-20">
         <div className="inline-flex items-center gap-2 bg-white/70 backdrop-blur rounded-full pl-2 pr-3.5 py-1.5 mb-6 sm:mb-8 border border-white">
           <span className="text-[10px] sm:text-[11px] bg-gray-900 text-white px-2 py-0.5 rounded-full">OPay × Google '26</span>
           <span className="text-[12px] sm:text-[13px] font-medium text-gray-700">National Innovation Challenge</span>

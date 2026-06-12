@@ -88,7 +88,7 @@ const ACCENT = "#34D399";
 export const Route = createFileRoute("/app")({
   component: AppPage,
   head: () => ({
-    meta: [{ title: "TrustFlow AI — Your vaults" }],
+    meta: [{ title: "Chëkd — Your vaults" }],
   }),
 });
 
@@ -589,7 +589,7 @@ function BuyerApp({ state, setState }: SessionProps) {
     eng.createVault();
     setView("deal");
   };
-  const sellerScore = getAccount("chioma@trustflow.ng")?.trustScore ?? 96;
+  const sellerScore = getAccount("chioma@chekd.ng")?.trustScore ?? 96;
 
   const navItems: NavItem[] = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, onClick: () => setView("dashboard") },
@@ -665,7 +665,7 @@ function BuyerNoDeal({ name, onStart }: { name: string; onStart: () => void }) {
         Welcome, {name.split(" ")[0]} 👋
       </h1>
       <p className="mt-2 text-[15px] text-gray-700 max-w-[52ch]">
-        When a seller shares a TrustFlow vault code, you'll join it here and pay safely into escrow —
+        When a seller shares a Chëkd vault code, you'll join it here and pay safely into escrow —
         your money is only released to the seller once you confirm delivery.
       </p>
       <div className="mt-8 glass-card p-10 sm:p-14 flex flex-col items-center text-center">
@@ -1475,7 +1475,7 @@ function SellerDashboard({
       <PageHeading
         badge="Dashboard"
         title={`Welcome back, ${firstName} 👋`}
-        subtitle="Here's how your shop is performing on TrustFlow."
+        subtitle="Here's how your shop is performing on Chëkd."
         action={<OpenVaultButton onClick={onOpenVault} />}
       />
 
@@ -1548,7 +1548,7 @@ function BuyerDashboard({
       <PageHeading
         badge="Dashboard"
         title={`Welcome back, ${firstName} 👋`}
-        subtitle="Every naira you spend on TrustFlow stays protected until you confirm delivery."
+        subtitle="Every naira you spend on Chëkd stays protected until you confirm delivery."
       />
 
       <div className="mt-7 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
@@ -1617,7 +1617,7 @@ function VaultsView({
       <PageHeading
         badge="Vaults"
         title="Your vaults"
-        subtitle="Active escrow and every deal you've completed on TrustFlow."
+        subtitle="Active escrow and every deal you've completed on Chëkd."
         action={<OpenVaultButton onClick={onOpenVault} />}
       />
 
@@ -1680,7 +1680,7 @@ function ActivityView({ user }: { user: User }) {
       <PageHeading
         badge="Activity"
         title="Activity & history"
-        subtitle="Everything that's happened across your TrustFlow account."
+        subtitle="Everything that's happened across your Chëkd account."
       />
       <div className="mt-7 grid lg:grid-cols-2 gap-5 items-start">
         <div className="glass-card p-6">
@@ -1772,7 +1772,7 @@ function MethodStep({ onPickAi }: { onPickAi: () => void }) {
         How do you want to set up this vault?
       </h3>
       <p className="text-[14px] text-gray-500 mt-1.5 mb-6">
-        Choose how TrustFlow should capture the deal details.
+        Choose how Chëkd should capture the deal details.
       </p>
 
       <div className="grid sm:grid-cols-2 gap-4">

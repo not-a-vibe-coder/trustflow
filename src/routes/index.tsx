@@ -13,11 +13,11 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "TrustFlow AI — Making every transaction between buyers and sellers safe" },
+      { title: "Chëkd — Making every transaction between buyers and sellers safe" },
       {
         name: "description",
         content:
-          "TrustFlow AI is the trust layer for African digital commerce — OPay-backed escrow, Gemini-powered fraud detection, and network-wide fraud intelligence.",
+          "Chëkd is the trust layer for African digital commerce — OPay-backed escrow, Gemini-powered fraud detection, and network-wide fraud intelligence.",
       },
     ],
   }),

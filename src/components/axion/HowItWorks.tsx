@@ -8,7 +8,7 @@ const STEPS = [
     n: "01",
     icon: ClipboardList,
     title: "Paste chat",
-    body: "Seller pastes the WhatsApp conversation straight into TrustFlow.",
+    body: "Seller pastes the WhatsApp conversation straight into Chëkd.",
   },
   {
     n: "02",

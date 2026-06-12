@@ -46,6 +46,32 @@ function NavButton({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+/** Mobile bottom-tab-style button — equal width so the row fits any screen. */
+function MobileTab({ item, active }: { item: NavItem; active: boolean }) {
+  const Icon = item.icon;
+  const cls = `flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 px-1 text-[10.5px] font-medium transition-colors ${
+    active ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-white/70"
+  }`;
+  const inner = (
+    <>
+      <Icon size={17} className={active ? "text-[#34D399]" : ""} />
+      <span className="truncate max-w-full">{item.label}</span>
+    </>
+  );
+  if (item.to) {
+    return (
+      <Link to={item.to} className={cls}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={item.onClick} className={cls}>
+      {inner}
+    </button>
+  );
+}
+
 export function TopNav({
   user,
   items,
@@ -80,7 +106,7 @@ export function TopNav({
             <div
               className="hidden min-[560px]:flex items-center gap-2 rounded-full bg-gray-900 text-white px-3 py-1.5"
               style={walletRinging ? { animation: "ring 1.4s ease-out infinite" } : undefined}
-              title="Your TrustFlow balance — settled to OPay"
+              title="Your Chëkd balance — settled to OPay"
             >
               <Wallet size={14} className="text-[#34D399]" />
               <span className="text-[13px] font-semibold tabular-nums">{naira(wallet)}</span>
@@ -112,11 +138,11 @@ export function TopNav({
         </div>
       </div>
 
-      {/* Mobile nav row */}
-      <nav className="md:hidden border-t border-white/50 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-1 px-3 py-2 min-w-max">
+      {/* Mobile nav — equal-width tabs that fit any device */}
+      <nav className="md:hidden border-t border-white/50 px-2 py-1.5">
+        <div className="flex items-stretch gap-1">
           {items.map((it) => (
-            <NavButton key={it.key} item={it} active={it.key === active} />
+            <MobileTab key={it.key} item={it} active={it.key === active} />
           ))}
         </div>
       </nav>

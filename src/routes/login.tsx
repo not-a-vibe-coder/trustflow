@@ -20,7 +20,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
   head: () => ({
     meta: [
-      { title: "TrustFlow AI — Log in or sign up" },
+      { title: "Chëkd — Log in or sign up" },
       {
         name: "description",
         content:
@@ -127,6 +127,12 @@ function LoginPage() {
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center max-w-[1000px] w-full">
           {/* Brand panel */}
           <div className="hidden lg:flex flex-col">
+            <img
+              src="/chekd-logo.png"
+              alt="Chëkd"
+              className="w-44 -ml-3 mb-4 self-start select-none"
+              draggable={false}
+            />
             <span className="self-start text-[10px] font-semibold uppercase tracking-[0.18em] bg-gray-900 text-[#34D399] px-2.5 py-1 rounded-full">
               Safe social commerce
             </span>
@@ -181,7 +187,7 @@ function LoginPage() {
               <form className="mt-6 flex flex-col gap-4" onSubmit={submitLogin}>
                 <div>
                   <h2 className="text-[22px] font-medium text-gray-900">Welcome back</h2>
-                  <p className="text-[14px] text-gray-600 mt-1">Log in to your TrustFlow account.</p>
+                  <p className="text-[14px] text-gray-600 mt-1">Log in to your Chëkd account.</p>
                 </div>
                 <Field
                   label="Email"
@@ -191,7 +197,7 @@ function LoginPage() {
                     setEmail(e.target.value);
                     setError(null);
                   }}
-                  placeholder="chioma@trustflow.ng"
+                  placeholder="chioma@chekd.ng"
                   autoComplete="username"
                 />
                 <Field
@@ -224,7 +230,7 @@ function LoginPage() {
                 <div>
                   <h2 className="text-[22px] font-medium text-gray-900">Create your account</h2>
                   <p className="text-[14px] text-gray-600 mt-1">
-                    Join TrustFlow AI — free, and your trust score starts at 100.
+                    Join Chëkd — free, and your trust score starts at 100.
                   </p>
                 </div>
 
@@ -248,7 +254,7 @@ function LoginPage() {
                     setEmail(e.target.value);
                     setError(null);
                   }}
-                  placeholder="you@trustflow.ng"
+                  placeholder="you@chekd.ng"
                   autoComplete="email"
                 />
                 <Field

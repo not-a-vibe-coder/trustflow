@@ -1,18 +1,20 @@
-import { ArrowRight, ShieldCheck, Store, ShoppingBag } from "lucide-react";
+import { ArrowRight, Check, ShieldCheck, Store, ShoppingBag } from "lucide-react";
 import { trustTier, type Role } from "@/lib/trustflow";
 
-// Shared chrome + form primitives for the TrustFlow app, styled to match the
+// Shared chrome + form primitives for the Chëkd app, styled to match the
 // marketing site (emerald accent, dark pills, soft cards).
 
+/** Chëkd wordmark — deep teal with the logo's diaeresis + a check accent. */
 export function Wordmark({ href = "/" }: { href?: string }) {
   return (
-    <a href={href} className="flex items-center gap-2 group">
-      <span className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center">
-        <ShieldCheck size={16} className="text-[#34D399]" />
-      </span>
-      <span className="font-display text-[19px] tracking-[-0.01em] text-gray-900 leading-none">
-        Trust<span className="text-[#059669]">Flow</span>{" "}
-        <span className="text-[12px] font-semibold align-middle text-[#059669]">AI</span>
+    <a href={href} aria-label="Chëkd — home" className="inline-flex items-center group shrink-0">
+      <span className="relative text-[21px] sm:text-[22px] font-bold tracking-[-0.03em] text-[#0F766E] leading-none">
+        Chëkd
+        <Check
+          size={13}
+          strokeWidth={4}
+          className="absolute -top-1.5 -right-3 text-[#34D399]"
+        />
       </span>
     </a>
   );

@@ -16,7 +16,7 @@ const LAYERS = [
   },
   {
     icon: Sparkles,
-    name: "TrustFlow AI",
+    name: "Chëkd AI",
     protects: "Protects the transaction",
     powered: true,
     points: [

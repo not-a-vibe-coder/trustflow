@@ -1,4 +1,4 @@
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 const EASE = "cubic-bezier(0.25,0.1,0.25,1)";
 
@@ -18,7 +18,7 @@ const COLUMNS: { heading: string; links: FooterLink[] }[] = [
     heading: "Protection layers",
     links: [
       { label: "TrustPay", href: "#layers" },
-      { label: "TrustFlow AI", href: "#layers" },
+      { label: "Chëkd AI", href: "#layers" },
       { label: "Fraud Intelligence", href: "#layers" },
     ],
   },
@@ -48,12 +48,10 @@ export default function Footer() {
         <div className="h-0.5 w-16 bg-[#34D399] mb-10 sm:mb-14 lg:mb-16" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr] gap-10 lg:gap-8 pb-12 sm:pb-16 lg:pb-20">
           <div className="flex flex-col gap-6 max-w-md">
-            <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-lg bg-gray-900 flex items-center justify-center">
-                <ShieldCheck size={16} className="text-[#34D399]" />
-              </span>
-              <span className="text-[16px] font-semibold tracking-tight text-gray-900">
-                TrustFlow<span className="text-[#059669]"> AI</span>
+            <div className="flex items-center">
+              <span className="relative inline-flex items-center text-[22px] font-bold tracking-[-0.03em] text-[#0F766E] leading-none">
+                Chëkd
+                <Check size={14} strokeWidth={4} className="absolute -top-1.5 -right-3 text-[#34D399]" />
               </span>
             </div>
             <p className="text-[14px] text-gray-600 leading-relaxed">
@@ -90,10 +88,10 @@ export default function Footer() {
         <div className="pt-6 border-t border-gray-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <span className="text-[12px] sm:text-[13px] text-gray-600 flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
-            TrustFlow AI · OPay & Google National Innovation Challenge 2026
+            Chëkd · OPay & Google National Innovation Challenge 2026
           </span>
           <span className="text-[12px] sm:text-[13px] text-gray-500">
-            © {new Date().getFullYear()} TrustFlow AI
+            © {new Date().getFullYear()} Chëkd
           </span>
         </div>
       </div>

@@ -55,7 +55,7 @@ export default function CaseStudies() {
         </h2>
 
         <p className="px-5 sm:px-8 lg:px-12 max-w-[60ch] text-[14px] sm:text-[16px] leading-[1.6] text-gray-600 mb-10 sm:mb-14 lg:mb-16">
-          Most teams pick one domain. TrustFlow addresses all four organically — not by
+          Most teams pick one domain. Chëkd addresses all four organically — not by
           design, but because the problem demands it.
         </p>
 

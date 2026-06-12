@@ -1,4 +1,4 @@
-// TrustFlow demo "backend".
+// Chëkd demo "backend".
 //
 // There is no real server: this whole app is a hardcoded demo. Auth, accounts,
 // the vault, the buyer joining and the deposit are all driven from here +
@@ -50,8 +50,8 @@ const DEMO_PASSWORD = "demo1234";
 // one coherent story.
 export const BUYER = {
   name: "Emeka Okafor",
-  email: "emeka@trustflow.ng",
-  handle: "emeka@trustflow.ng",
+  email: "emeka@chekd.ng",
+  handle: "emeka@chekd.ng",
 };
 
 export const SELLER_NAME = "Chioma Esther";
@@ -69,7 +69,7 @@ const SEED_ACCOUNTS: StoredAccount[] = [
     id: "acc_chioma",
     role: "seller",
     name: "Chioma Esther",
-    email: "chioma@trustflow.ng",
+    email: "chioma@chekd.ng",
     password: DEMO_PASSWORD,
     trustScore: 96,
     tradesCompleted: 8,
@@ -80,7 +80,7 @@ const SEED_ACCOUNTS: StoredAccount[] = [
     id: "acc_emeka",
     role: "buyer",
     name: "Emeka Okafor",
-    email: "emeka@trustflow.ng",
+    email: "emeka@chekd.ng",
     password: DEMO_PASSWORD,
     trustScore: 88,
     tradesCompleted: 5,
@@ -92,7 +92,7 @@ const SEED_ACCOUNTS: StoredAccount[] = [
 export const DEMO_ACCOUNTS = [
   {
     name: "Chioma Esther",
-    email: "chioma@trustflow.ng",
+    email: "chioma@chekd.ng",
     role: "seller" as Role,
     blurb: "Lagos fashion seller · Trust score 96",
     trustScore: 96,
@@ -100,7 +100,7 @@ export const DEMO_ACCOUNTS = [
   },
   {
     name: "Emeka Okafor",
-    email: "emeka@trustflow.ng",
+    email: "emeka@chekd.ng",
     role: "buyer" as Role,
     blurb: "Repeat buyer · Trust score 88",
     trustScore: 88,

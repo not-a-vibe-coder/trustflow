@@ -44,7 +44,7 @@ import {
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,
   head: () => ({
-    meta: [{ title: "TrustFlow AI — Your profile" }],
+    meta: [{ title: "Chëkd — Your profile" }],
   }),
 });
 
