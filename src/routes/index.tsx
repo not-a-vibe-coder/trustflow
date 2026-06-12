@@ -4,6 +4,7 @@ import Marquee from "@/components/axion/Marquee";
 import About from "@/components/axion/About";
 import ValueProps from "@/components/axion/ValueProps";
 import HowItWorks from "@/components/axion/HowItWorks";
+import TrustScore from "@/components/axion/TrustScore";
 import CaseStudies from "@/components/axion/CaseStudies";
 import CTA from "@/components/axion/CTA";
 import Footer from "@/components/axion/Footer";
@@ -30,6 +31,7 @@ function Index() {
       <div id="problem"><About /></div>
       <div id="layers"><ValueProps /></div>
       <div id="flow"><HowItWorks /></div>
+      <div id="trust"><TrustScore /></div>
       <div id="domains"><CaseStudies /></div>
       <CTA />
       <Footer />

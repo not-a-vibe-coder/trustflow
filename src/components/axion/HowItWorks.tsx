@@ -1,4 +1,5 @@
 import { ClipboardList, ScanText, Lock, QrCode, BadgeCheck, FileText, ArrowRight } from "lucide-react";
+import { Reveal } from "@/components/trustflow/Reveal";
 
 const EASE = "cubic-bezier(0.25,0.1,0.25,1)";
 
@@ -71,23 +72,22 @@ export default function HowItWorks() {
         </h2>
 
         <div className="px-5 sm:px-8 lg:px-12 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 sm:gap-6 lg:gap-7">
-          {STEPS.map(({ n, icon: Icon, title, body }) => (
-            <div
+          {STEPS.map(({ n, icon: Icon, title, body }, i) => (
+            <Reveal
               key={n}
-              className="group rounded-2xl bg-white p-6 sm:p-7 flex flex-col gap-6 transition-colors duration-500 hover:bg-[#34D399] border-l-[3px] border-[#34D399]"
-              style={{ transitionTimingFunction: "cubic-bezier(0.25,0.1,0.25,1)" }}
+              variant="up"
+              delay={(i % 3) * 90}
+              className="group glass-card glass-card-hover p-6 sm:p-7 flex flex-col gap-6 border-l-[3px] border-[#34D399]"
             >
               <div className="flex items-center justify-between">
-                <span
-                  className="text-[12px] font-medium text-gray-500 tracking-wider transition-colors duration-500 group-hover:text-gray-900"
-                  style={{ transitionTimingFunction: "cubic-bezier(0.25,0.1,0.25,1)" }}
-                >
+                <span className="text-[12px] font-medium text-gray-500 tracking-wider">
                   STEP {n}
                 </span>
-                <div className="w-10 h-10 rounded-full bg-[#F5F5F5] flex items-center justify-center transition-colors duration-500 group-hover:bg-gray-900"
-                  style={{ transitionTimingFunction: "cubic-bezier(0.25,0.1,0.25,1)" }}
-                >
-                  <Icon size={18} className="text-gray-900 transition-colors duration-500 group-hover:text-[#34D399]" />
+                <div className="w-10 h-10 rounded-full bg-white/70 border border-white flex items-center justify-center transition-colors duration-500 group-hover:bg-gray-900">
+                  <Icon
+                    size={18}
+                    className="text-gray-900 transition-colors duration-500 group-hover:text-[#34D399]"
+                  />
                 </div>
               </div>
               <h3
@@ -96,8 +96,8 @@ export default function HowItWorks() {
               >
                 {title}
               </h3>
-              <p className="text-[13px] sm:text-[14px] text-gray-700 leading-relaxed group-hover:text-gray-900 transition-colors duration-500">{body}</p>
-            </div>
+              <p className="text-[13px] sm:text-[14px] text-gray-700 leading-relaxed">{body}</p>
+            </Reveal>
           ))}
         </div>
 

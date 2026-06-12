@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  Activity,
   ArrowLeft,
   ArrowRight,
+  ArrowUpRight,
   BadgeCheck,
   Bell,
   Calendar,
@@ -16,41 +18,69 @@ import {
   Image as ImageIcon,
   Landmark,
   Laptop,
+  LayoutDashboard,
   Loader2,
   Lock,
-  LogOut,
   PenLine,
   Play,
+  Plus,
   QrCode,
+  Receipt,
   RotateCcw,
   ScanLine,
-  ScanText,
   Settings2,
+  ShieldCheck,
   Sparkles,
   Tag,
+  TrendingUp,
   Truck,
   Upload,
+  UserCircle,
   UserPlus,
   Users,
+  Vault as VaultIcon,
   Wallet,
-  Wand2,
   X,
 } from "lucide-react";
-import { Avatar, Badge, PrimaryButton, Wordmark } from "@/components/trustflow/ui";
+import { Avatar, Badge, PrimaryButton, TrustScoreBadge } from "@/components/trustflow/ui";
+import { AppCanvas } from "@/components/trustflow/Glass";
+import { TopNav, type NavItem } from "@/components/trustflow/AppNav";
+import {
+  ActivityFeed,
+  MiniBarChart,
+  SectionLabel,
+  StatCard,
+  TransactionTable,
+  TrustRing,
+} from "@/components/trustflow/widgets";
+import { GeminiLogo } from "@/components/trustflow/GeminiLogo";
 import {
   AMOUNT,
   BUYER,
   DEMO_VAULT_INFO,
+  SELLER_NAME,
+  WALLET_BASELINE,
   type AppState,
   type EventKind,
+  type User,
   type Vault,
+  applyTradeCompleted,
+  bumpAccountTrust,
   clearSession,
+  consumePendingView,
+  demoActivity,
+  demoMonthly,
+  demoTransactions,
+  getAccount,
+  loadSharedState,
   loadState,
   makeInvoiceNo,
   naira,
   newVault,
   nextEventId,
   saveState,
+  trustTier,
+  VAULT_KEY,
 } from "@/lib/trustflow";
 
 const ACCENT = "#34D399";
@@ -62,36 +92,77 @@ export const Route = createFileRoute("/app")({
   }),
 });
 
-type View = "dashboard" | "vault";
+type View = "dashboard" | "vaults" | "activity" | "vault";
 type WizardStep = null | "method" | "upload" | "extracting" | "review";
 
-function AppPage() {
+type SessionProps = {
+  state: AppState & { user: User };
+  setState: React.Dispatch<React.SetStateAction<AppState | null>>;
+};
+
+/**
+ * Shared session: hydrates the per-tab user + shared vault, persists changes,
+ * guards auth, and keeps the vault synced across tabs (seller in one tab,
+ * buyer in another) via the `storage` event.
+ */
+function useTrustflowSession() {
   const navigate = useNavigate();
+  const [state, setState] = useState<AppState | null>(null);
 
-  const [state, setState] = useState<AppState | null>(null); // null until hydrated
-  const [view, setView] = useState<View>("dashboard");
-  const [wizard, setWizard] = useState<WizardStep>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  // Transient money-movement animation: "deposit" fills the vault, "release" drains it.
-  const [anim, setAnim] = useState<null | "deposit" | "release">(null);
-  const [animBalance, setAnimBalance] = useState(0);
-
-  const imageUrlRef = useRef<string | null>(null);
-  imageUrlRef.current = imageUrl;
-
-  // ---- hydrate from localStorage (client only) ----
   useEffect(() => {
-    const s = loadState();
-    setState(s);
-    if (s.vault) setView("vault");
+    setState(loadState());
   }, []);
 
-  // ---- persist + auth guard ----
   useEffect(() => {
     if (!state) return;
     saveState(state);
     if (!state.user) navigate({ to: "/login" });
   }, [state, navigate]);
+
+  // Cross-tab sync: when the shared vault changes in another tab, merge it in
+  // and refresh this tab's user trust score from the accounts store.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key !== VAULT_KEY) return;
+      setState((s) => {
+        if (!s) return s;
+        const shared = loadSharedState();
+        const refreshed = s.user ? (getAccount(s.user.email) ?? s.user) : s.user;
+        return { ...s, ...shared, user: refreshed };
+      });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  return { state, setState };
+}
+
+function AppPage() {
+  const { state, setState } = useTrustflowSession();
+
+  if (!state || !state.user) {
+    return (
+      <main className="app-canvas min-h-screen flex items-center justify-center">
+        <Loader2 size={22} className="animate-spin text-gray-400" />
+      </main>
+    );
+  }
+
+  const session = { state: state as AppState & { user: User }, setState };
+  return state.user.role === "buyer" ? <BuyerApp {...session} /> : <SellerApp {...session} />;
+}
+
+/**
+ * Shared vault demo engine. Owns the money-movement animation and every action
+ * either party can take, with role-aware activity copy — so the seller and the
+ * buyer pages can each run the full demo independently.
+ */
+function useVaultEngine({ state, setState }: SessionProps) {
+  const [anim, setAnim] = useState<null | "deposit" | "release">(null);
+  const [animBalance, setAnimBalance] = useState(0);
+  const isSeller = state.user.role === "seller";
+  const sellerFirst = SELLER_NAME.split(" ")[0];
 
   // ---- money-movement counter animation (deposit fills, release drains) ----
   useEffect(() => {
@@ -110,9 +181,13 @@ function AppPage() {
         return;
       }
       setAnimBalance(to);
+      // Side effect kept out of the state updater (which can run twice): the
+      // counterparty's persisted trust score ticks up once per completed trade.
+      if (anim === "release") bumpAccountTrust(BUYER.email);
       setState((s) => {
         if (!s || !s.vault) return s;
         const v = s.vault;
+        const seller = s.user?.role === "seller";
         const event = (text: string, kind: EventKind) => ({
           id: nextEventId(),
           text,
@@ -126,14 +201,36 @@ function AppPage() {
               ...v,
               balance: AMOUNT,
               status: "funded",
-              events: [event(`${naira(AMOUNT)} secured in escrow ✓`, "funded"), ...v.events],
+              events: [
+                event(
+                  seller
+                    ? `${naira(AMOUNT)} secured in escrow ✓`
+                    : `Your ${naira(AMOUNT)} is locked safely in escrow ✓`,
+                  "funded",
+                ),
+                ...v.events,
+              ],
             },
           };
         }
-        // release complete — funds have left the vault and landed in the seller's wallet (OPay)
-        const invoiceNo = makeInvoiceNo();
+        // release complete — funds leave the vault for the seller's OPay account
+        const invoiceNo = makeInvoiceNo(s.user?.invoice?.prefix);
+        // Both parties' trust scores tick up on a clean, completed trade.
+        const user = s.user ? applyTradeCompleted(s.user) : s.user;
+        const events = seller
+          ? [
+              event(`Invoice ${invoiceNo} auto-generated`, "info"),
+              event(`Trust score +2 for you and ${BUYER.name.split(" ")[0]} ✓`, "info"),
+              event(`${naira(AMOUNT)} released to your OPay account ✓`, "released"),
+            ]
+          : [
+              event(`Receipt ${invoiceNo} saved to your account`, "info"),
+              event(`Trust score +2 for you and ${sellerFirst} ✓`, "info"),
+              event(`Delivery confirmed — ${naira(AMOUNT)} released to ${sellerFirst} ✓`, "released"),
+            ];
         return {
           ...s,
+          user,
           walletBalance: (s.walletBalance ?? 0) + AMOUNT,
           vault: {
             ...v,
@@ -141,11 +238,7 @@ function AppPage() {
             payout: AMOUNT,
             status: "released",
             invoiceNo,
-            events: [
-              event(`Invoice ${invoiceNo} auto-generated`, "info"),
-              event(`${naira(AMOUNT)} released to your OPay account ✓`, "released"),
-              ...v.events,
-            ],
+            events: [...events, ...v.events],
           },
         };
       });
@@ -154,14 +247,6 @@ function AppPage() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [anim]);
-
-  // ---- clean up object URL on unmount ----
-  useEffect(
-    () => () => {
-      if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
-    },
-    [],
-  );
 
   // ---- vault mutation helpers ----
   const updateVault = (fn: (v: Vault) => Vault) =>
@@ -173,21 +258,7 @@ function AppPage() {
       events: [{ id: nextEventId(), text, kind, at: Date.now() }, ...v.events],
     }));
 
-  // ---- actions ----
-  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageUrl((old) => {
-      if (old && old !== "sample") URL.revokeObjectURL(old);
-      return URL.createObjectURL(file);
-    });
-  };
-
-  const createVault = () => {
-    setState((s) => (s ? { ...s, vault: newVault() } : s));
-    setWizard(null);
-    setView("vault");
-  };
+  const createVault = () => setState((s) => (s ? { ...s, vault: newVault() } : s));
 
   const copyCode = async (code: string) => {
     try {
@@ -199,13 +270,18 @@ function AppPage() {
     updateVault((v) => ({ ...v, copied: true }));
   };
 
-  // Presenter control: the buyer (on their own device, in reality) asks to join.
+  // Buyer asks to join (real buyer action / seller-side presenter sim).
   const buyerRequestJoin = () => {
     updateVault((v) => ({ ...v, joinRequest: true }));
-    addEvent(`${BUYER.name} requested to join this vault`, "request");
+    addEvent(
+      isSeller
+        ? `${BUYER.name} requested to join this vault`
+        : `You asked to join ${sellerFirst}'s vault`,
+      "request",
+    );
   };
 
-  // Real seller action from the notification.
+  // Seller approves the join (real seller action / buyer-side presenter sim).
   const approveJoin = () => {
     updateVault((v) => ({
       ...v,
@@ -213,48 +289,145 @@ function AppPage() {
       status: "buyerJoined",
       buyer: { name: BUYER.name },
     }));
-    addEvent(`${BUYER.name} joined the vault`, "join");
+    addEvent(
+      isSeller
+        ? `${BUYER.name} joined the vault`
+        : `${sellerFirst} approved you — you're in the vault`,
+      "join",
+    );
   };
 
   const declineJoin = () => {
     updateVault((v) => ({ ...v, joinRequest: false }));
-    addEvent(`${BUYER.name}'s join request was declined`, "info");
+    addEvent(
+      isSeller ? `${BUYER.name}'s join request was declined` : `Your join request was declined`,
+      "info",
+    );
   };
 
-  // Presenter control: the buyer funds the vault.
+  // Buyer funds the vault.
   const buyerDeposit = () => {
     if (state?.vault?.status !== "buyerJoined") return;
-    addEvent(`${BUYER.name} is depositing ${naira(AMOUNT)}…`, "deposit");
+    addEvent(
+      isSeller
+        ? `${BUYER.name} is depositing ${naira(AMOUNT)}…`
+        : `You're paying ${naira(AMOUNT)} into escrow…`,
+      "deposit",
+    );
     setAnimBalance(0);
     setAnim("deposit");
   };
 
-  // Real seller action: the item has been handed over.
+  // Seller marks the item handed over.
   const markDelivered = () => {
     if (state?.vault?.status !== "funded") return;
     updateVault((v) => ({ ...v, status: "delivered" }));
-    addEvent(`You marked the ${DEMO_VAULT_INFO.item} as delivered`, "delivered");
+    addEvent(
+      isSeller
+        ? `You marked the ${DEMO_VAULT_INFO.item} as delivered`
+        : `${sellerFirst} marked the ${DEMO_VAULT_INFO.item} as delivered`,
+      "delivered",
+    );
   };
 
-  // Presenter control: the buyer reveals their one-time release QR.
+  // Buyer reveals their one-time release QR.
   const buyerShowQr = () => {
     if (state?.vault?.status !== "delivered" || state.vault.releaseQr) return;
     updateVault((v) => ({ ...v, releaseQr: true }));
-    addEvent(`${BUYER.name} generated a one-time release QR`, "info");
+    addEvent(
+      isSeller ? `${BUYER.name} generated a one-time release QR` : `You generated a one-time release QR`,
+      "info",
+    );
   };
 
-  // Real seller action: scan the buyer's QR to release the funds.
+  // Seller scans the QR to release the funds.
   const releaseFunds = () => {
     if (state?.vault?.status !== "delivered" || !state.vault.releaseQr) return;
-    addEvent("Scanned buyer's QR — verifying and releasing funds…", "released");
+    addEvent(
+      isSeller
+        ? "Scanned buyer's QR — verifying and releasing funds…"
+        : `${sellerFirst} scanned your QR — releasing your funds…`,
+      "released",
+    );
     setAnimBalance(AMOUNT);
     setAnim("release");
   };
 
-  const resetDemo = () => {
+  const resetVault = () => {
     setAnim(null);
     setAnimBalance(0);
-    setState((s) => (s ? { ...s, vault: newVault(), walletBalance: 0 } : s));
+    setState((s) => (s ? { ...s, vault: newVault(), walletBalance: WALLET_BASELINE } : s));
+  };
+
+  const vault = state.vault;
+  const displayBalance = anim ? animBalance : (vault?.balance ?? 0);
+  const displayPayout = anim === "release" ? AMOUNT - animBalance : (vault?.payout ?? 0);
+  // Seller's wallet. During a release it ticks up in lockstep as the escrow drains.
+  const walletBalance = state.walletBalance ?? 0;
+  const displayWallet = anim === "release" ? walletBalance + (AMOUNT - animBalance) : walletBalance;
+
+  return {
+    anim,
+    displayBalance,
+    displayPayout,
+    displayWallet,
+    walletBalance,
+    addEvent,
+    createVault,
+    copyCode,
+    buyerRequestJoin,
+    approveJoin,
+    declineJoin,
+    buyerDeposit,
+    markDelivered,
+    buyerShowQr,
+    releaseFunds,
+    resetVault,
+  };
+}
+
+function SellerApp({ state, setState }: SessionProps) {
+  const navigate = useNavigate();
+  const eng = useVaultEngine({ state, setState });
+
+  const [view, setView] = useState<View>("dashboard");
+  const [wizard, setWizard] = useState<WizardStep>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  const imageUrlRef = useRef<string | null>(null);
+  imageUrlRef.current = imageUrl;
+
+  // Honor a view handed over from the profile page's nav.
+  useEffect(() => {
+    const pv = consumePendingView();
+    if (pv === "dashboard" || pv === "vaults" || pv === "activity") setView(pv);
+  }, []);
+
+  // ---- clean up object URL on unmount ----
+  useEffect(
+    () => () => {
+      if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    },
+    [],
+  );
+
+  const onPickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageUrl((old) => {
+      if (old && old !== "sample") URL.revokeObjectURL(old);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const createVault = () => {
+    eng.createVault();
+    setWizard(null);
+    setView("vault");
+  };
+
+  const resetDemo = () => {
+    eng.resetVault();
     setView("vault");
   };
 
@@ -263,69 +436,64 @@ function AppPage() {
     navigate({ to: "/login" });
   };
 
-  // ---- render ----
-  if (!state || !state.user) {
-    return (
-      <main className="min-h-screen bg-[#EFEFEF] flex items-center justify-center">
-        <Loader2 size={22} className="animate-spin text-gray-400" />
-      </main>
-    );
-  }
-
   const { user, vault } = state;
-  const displayBalance = anim ? animBalance : (vault?.balance ?? 0);
-  const displayPayout = anim === "release" ? AMOUNT - animBalance : (vault?.payout ?? 0);
-  // Seller's wallet. During a release it ticks up in lockstep as the escrow drains.
-  const walletBalance = state.walletBalance ?? 0;
-  const displayWallet = anim === "release" ? walletBalance + (AMOUNT - animBalance) : walletBalance;
+  const {
+    anim,
+    displayBalance,
+    displayPayout,
+    displayWallet,
+    copyCode,
+    approveJoin,
+    declineJoin,
+    buyerRequestJoin,
+    buyerDeposit,
+    buyerShowQr,
+    markDelivered,
+    releaseFunds,
+  } = eng;
+
+  const navItems: NavItem[] = [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, onClick: () => setView("dashboard") },
+    { key: "vaults", label: "Vaults", icon: VaultIcon, onClick: () => setView("vaults") },
+    { key: "activity", label: "Activity", icon: Activity, onClick: () => setView("activity") },
+    { key: "profile", label: "Profile", icon: UserCircle, to: "/profile" },
+  ];
+  const activeKey = view === "vault" ? "vaults" : view;
 
   return (
-    <main className="min-h-screen bg-[#EFEFEF]">
-      {/* App header */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-gray-200">
-        <div className="mx-auto max-w-[1100px] px-5 sm:px-8 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Wordmark />
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-              <Sparkles size={11} className="text-[#059669]" /> Demo
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div
-              className="flex items-center gap-2 rounded-full bg-gray-900 text-white px-3 py-1.5"
-              style={anim === "release" ? { animation: "ring 1.4s ease-out infinite" } : undefined}
-              title="Your TrustFlow balance — settled to OPay"
-            >
-              <Wallet size={14} className="text-[#34D399]" />
-              <span className="text-[13px] font-semibold tabular-nums">{naira(displayWallet)}</span>
-            </div>
-            <div className="hidden sm:flex items-center gap-2">
-              <Avatar name={user.name} accent />
-              <div className="leading-tight">
-                <div className="text-[13px] font-medium text-gray-900">{user.name}</div>
-                <div className="text-[11px] text-gray-500">{user.email}</div>
-              </div>
-            </div>
-            <button
-              onClick={logout}
-              className="text-[13px] text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1.5"
-            >
-              <LogOut size={14} /> Log out
-            </button>
-          </div>
-        </div>
-      </header>
+    <AppCanvas>
+      <TopNav
+        user={user}
+        items={navItems}
+        active={activeKey}
+        wallet={displayWallet}
+        walletRinging={anim === "release"}
+        onLogout={logout}
+      />
 
-      <div className="mx-auto max-w-[1100px] px-5 sm:px-8 py-8 sm:py-10">
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-8 sm:py-10">
         {view === "dashboard" && (
-          <Dashboard
+          <SellerDashboard
             user={user}
             vault={vault}
             balance={displayWallet}
             onOpenVault={() => setWizard("method")}
             onOpenExisting={() => setView("vault")}
+            onGoActivity={() => setView("activity")}
+            onGoVaults={() => setView("vaults")}
           />
         )}
+
+        {view === "vaults" && (
+          <VaultsView
+            user={user}
+            vault={vault}
+            onOpenVault={() => setWizard("method")}
+            onOpenExisting={() => setView("vault")}
+          />
+        )}
+
+        {view === "activity" && <ActivityView user={user} />}
 
         {view === "vault" && vault && (
           <VaultLive
@@ -335,7 +503,7 @@ function AppPage() {
             displayPayout={displayPayout}
             anim={anim}
             onCopy={() => copyCode(vault.code)}
-            onBack={() => setView("dashboard")}
+            onBack={() => setView("vaults")}
             onMarkDelivered={markDelivered}
             onReleaseFunds={releaseFunds}
           />
@@ -383,106 +551,1147 @@ function AppPage() {
         @keyframes pop { 0% { transform: scale(.92); opacity: 0;} 60% { transform: scale(1.02);} 100% { transform: scale(1); opacity: 1;} }
         @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.45);} 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0);} }
       `}</style>
-    </main>
+    </AppCanvas>
+  );
+}
+
+// ---------- buyer app ----------
+
+type BuyerView = "dashboard" | "deal" | "activity";
+
+function BuyerApp({ state, setState }: SessionProps) {
+  const navigate = useNavigate();
+  const eng = useVaultEngine({ state, setState });
+  const { user, vault } = state;
+  const [view, setView] = useState<BuyerView>(vault ? "deal" : "dashboard");
+
+  // When a presenter opens a fresh vault, jump the buyer to the live deal.
+  const vaultCode = vault?.code;
+  useEffect(() => {
+    if (vaultCode) setView("deal");
+  }, [vaultCode]);
+
+  // Honor a view handed over from the profile page's nav (wins over the jump).
+  useEffect(() => {
+    const pv = consumePendingView();
+    if (pv === "dashboard" || pv === "activity") setView(pv);
+  }, []);
+
+  const logout = () => {
+    clearSession();
+    navigate({ to: "/login" });
+  };
+  const resetDemo = () => {
+    eng.resetVault();
+    setView("deal");
+  };
+  const startDemo = () => {
+    eng.createVault();
+    setView("deal");
+  };
+  const sellerScore = getAccount("chioma@trustflow.ng")?.trustScore ?? 96;
+
+  const navItems: NavItem[] = [
+    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, onClick: () => setView("dashboard") },
+    ...(vault
+      ? [{ key: "deal", label: "Active deal", icon: ShieldCheck, onClick: () => setView("deal") } as NavItem]
+      : []),
+    { key: "activity", label: "Activity", icon: Activity, onClick: () => setView("activity") },
+    { key: "profile", label: "Profile", icon: UserCircle, to: "/profile" },
+  ];
+
+  return (
+    <AppCanvas>
+      <TopNav user={user} items={navItems} active={view} onLogout={logout} />
+
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 py-8 sm:py-10">
+        {view === "dashboard" && (
+          <BuyerDashboard
+            user={user}
+            vault={vault}
+            onGoActivity={() => setView("activity")}
+            onGoDeal={() => setView("deal")}
+            onStartDeal={startDemo}
+          />
+        )}
+
+        {view === "activity" && <ActivityView user={user} />}
+
+        {view === "deal" &&
+          (vault ? (
+            <BuyerVaultLive
+              sellerScore={sellerScore}
+              vault={vault}
+              displayBalance={eng.displayBalance}
+              displayPayout={eng.displayPayout}
+              anim={eng.anim}
+              onBack={() => setView("dashboard")}
+              onRequestJoin={eng.buyerRequestJoin}
+              onDeposit={eng.buyerDeposit}
+              onShowQr={eng.buyerShowQr}
+            />
+          ) : (
+            <BuyerNoDeal name={user.name} onStart={startDemo} />
+          ))}
+      </div>
+
+      {/* Presenter controls — drive the seller's side manually */}
+      {view === "deal" && vault && (
+        <BuyerPresenterControls
+          vault={vault}
+          anim={eng.anim}
+          onSellerApprove={eng.approveJoin}
+          onSellerDeliver={eng.markDelivered}
+          onSellerRelease={eng.releaseFunds}
+          onReset={resetDemo}
+        />
+      )}
+
+      <style>{`
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(24px);} to { opacity: 1; transform: translateX(0);} }
+        @keyframes pop { 0% { transform: scale(.92); opacity: 0;} 60% { transform: scale(1.02);} 100% { transform: scale(1); opacity: 1;} }
+        @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.45);} 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0);} }
+      `}</style>
+    </AppCanvas>
+  );
+}
+
+function BuyerNoDeal({ name, onStart }: { name: string; onStart: () => void }) {
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <Badge>Your deals</Badge>
+      <h1 className="mt-4 text-[28px] sm:text-[32px] font-medium text-gray-900 tracking-[-0.02em]">
+        Welcome, {name.split(" ")[0]} 👋
+      </h1>
+      <p className="mt-2 text-[15px] text-gray-700 max-w-[52ch]">
+        When a seller shares a TrustFlow vault code, you'll join it here and pay safely into escrow —
+        your money is only released to the seller once you confirm delivery.
+      </p>
+      <div className="mt-8 glass-card p-10 sm:p-14 flex flex-col items-center text-center">
+        <span className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+          <Lock size={26} className="text-gray-300" />
+        </span>
+        <p className="mt-5 text-[15px] font-medium text-gray-800">No active deal yet</p>
+        <p className="mt-1 text-[13px] text-gray-600 max-w-[42ch]">
+          A seller can share a vault code with you — or start a guided demo deal and walk the full
+          protected flow yourself.
+        </p>
+        <button
+          onClick={onStart}
+          className="mt-6 group bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[14px] font-medium rounded-full pl-5 pr-2 py-2.5 inline-flex items-center gap-3 transition-colors"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Play size={15} /> Start a demo deal
+          </span>
+          <span className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center transition-transform duration-500 group-hover:-rotate-45">
+            <ShieldCheck size={14} className="text-[#34D399]" />
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- buyer live deal (mirror of the seller's vault view) ----------
+
+function BuyerVaultLive({
+  sellerScore,
+  vault,
+  displayBalance,
+  displayPayout,
+  anim,
+  onBack,
+  onRequestJoin,
+  onDeposit,
+  onShowQr,
+}: {
+  sellerScore: number;
+  vault: Vault;
+  displayBalance: number;
+  displayPayout: number;
+  anim: null | "deposit" | "release";
+  onBack: () => void;
+  onRequestJoin: () => void;
+  onDeposit: () => void;
+  onShowQr: () => void;
+}) {
+  const pct = Math.min(100, (displayBalance / AMOUNT) * 100);
+  const depositing = anim === "deposit";
+  const releasing = anim === "release";
+  const status = vault.status;
+  const requested = vault.joinRequest;
+  const joined = status !== "awaiting";
+  const isFunded = status === "funded";
+  const isDelivered = status === "delivered";
+  const isReleased = status === "released";
+  const sellerFirst = SELLER_NAME.split(" ")[0];
+
+  const reachedPay = ["funded", "delivered", "released"].includes(status);
+
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <button
+        onClick={onBack}
+        className="text-[13px] text-gray-500 hover:text-gray-900 transition-colors inline-flex items-center gap-1.5"
+      >
+        <ArrowLeft size={14} /> Dashboard
+      </button>
+
+      <div className="mt-3 flex items-center justify-between gap-4">
+        <h1 className="text-[26px] sm:text-[30px] font-medium text-gray-900 tracking-[-0.02em]">
+          {vault.info.item}
+        </h1>
+        <StatusPill status={status} />
+      </div>
+      <p className="mt-1 text-[14px] text-gray-600">
+        {naira(vault.info.price)} · delivery {vault.info.delivery} — your money stays protected until
+        you confirm delivery.
+      </p>
+
+      <div className="mt-6 grid lg:grid-cols-[1.2fr_1fr] gap-5 items-start">
+        {/* Left column */}
+        <div className="flex flex-col gap-5">
+          {/* Protected money */}
+          <div className="glass-dark text-white p-6 sm:p-7 relative overflow-hidden">
+            <div
+              className="pointer-events-none absolute -top-24 -right-24 w-[300px] h-[300px] rounded-full opacity-30 blur-3xl"
+              style={{ background: "radial-gradient(circle, #34D399 0%, transparent 70%)" }}
+            />
+            <div className="relative flex items-center justify-between">
+              <span className="text-[12px] text-gray-400 uppercase tracking-wider">
+                Your money · protected
+              </span>
+              <span className="text-[11px] text-[#34D399] flex items-center gap-1">
+                <Lock size={12} /> In escrow
+              </span>
+            </div>
+            <div className="relative mt-5 flex items-end justify-between">
+              <div>
+                <div className="text-[12px] text-gray-400">Locked in the vault</div>
+                <div className="text-[36px] sm:text-[40px] font-medium tracking-tight tabular-nums">
+                  {naira(displayBalance)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[12px] text-gray-400">
+                  {isReleased || releasing ? "Released" : "Agreed"}
+                </div>
+                <div className="text-[16px] font-medium text-gray-300 tabular-nums">
+                  {isReleased || releasing ? naira(displayPayout) : naira(AMOUNT)}
+                </div>
+              </div>
+            </div>
+            <div className="relative mt-4 h-2 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-[width] duration-200"
+                style={{ width: `${pct}%`, backgroundColor: ACCENT }}
+              />
+            </div>
+            <div className="relative mt-3 text-[13px]">
+              {isReleased ? (
+                <span className="inline-flex items-center gap-1.5 text-[#34D399] font-medium">
+                  <BadgeCheck size={16} /> Delivery confirmed — payment released to {sellerFirst}.
+                </span>
+              ) : releasing ? (
+                <span className="inline-flex items-center gap-1.5 text-gray-300">
+                  <Loader2 size={14} className="animate-spin" /> Releasing {naira(displayPayout)} to{" "}
+                  {sellerFirst}…
+                </span>
+              ) : isDelivered ? (
+                <span className="inline-flex items-center gap-1.5 text-gray-300">
+                  <Truck size={14} className="text-[#34D399]" /> Delivered — release once you've
+                  checked the item.
+                </span>
+              ) : isFunded ? (
+                <span className="inline-flex items-center gap-1.5 text-[#34D399] font-medium">
+                  <BadgeCheck size={16} /> Locked safely — held until you confirm delivery.
+                </span>
+              ) : depositing ? (
+                <span className="inline-flex items-center gap-1.5 text-gray-300">
+                  <Loader2 size={14} className="animate-spin" /> Moving your money into escrow…
+                </span>
+              ) : joined ? (
+                <span className="inline-flex items-center gap-1.5 text-gray-300">
+                  <Wallet size={14} /> Ready for you to pay into the vault.
+                </span>
+              ) : requested ? (
+                <span className="inline-flex items-center gap-1.5 text-gray-300">
+                  <Loader2 size={14} className="animate-spin" /> Waiting for {sellerFirst} to approve
+                  you…
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-gray-400">
+                  <UserPlus size={14} /> Ask to join with {sellerFirst}'s vault code.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Your next step — buyer's own actions */}
+          <div className="glass-card p-6" style={{ animation: "fadeUp .4s ease both" }}>
+            <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <Wallet size={13} /> Your next step
+            </div>
+
+            {!joined && !requested && (
+              <div>
+                <p className="text-[13px] text-gray-600 leading-[1.5] mb-4">
+                  Ask {sellerFirst} to let you into this vault. She approves you before any money
+                  moves.
+                </p>
+                <button
+                  onClick={onRequestJoin}
+                  className="bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[14px] font-medium rounded-full px-5 py-2.5 inline-flex items-center gap-2 transition-colors"
+                  style={{ animation: "ring 1.6s ease-out infinite" }}
+                >
+                  <UserPlus size={16} /> Ask to join this vault
+                </button>
+              </div>
+            )}
+
+            {!joined && requested && (
+              <div className="flex items-center gap-2.5 text-[14px] text-gray-700 font-medium py-2">
+                <Loader2 size={18} className="animate-spin text-[#059669]" />
+                Waiting for {sellerFirst} to approve your request…
+              </div>
+            )}
+
+            {status === "buyerJoined" && !depositing && (
+              <div>
+                <p className="text-[13px] text-gray-600 leading-[1.5] mb-4">
+                  Pay into the OPay-backed vault. Your money is held safely — it is{" "}
+                  <b className="text-gray-900">not</b> sent to {sellerFirst} until you confirm
+                  delivery.
+                </p>
+                <button
+                  onClick={onDeposit}
+                  className="bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[14px] font-medium rounded-full px-5 py-2.5 inline-flex items-center gap-2 transition-colors"
+                  style={{ animation: "ring 1.6s ease-out infinite" }}
+                >
+                  <Wallet size={16} /> Pay {naira(AMOUNT)} into escrow
+                </button>
+              </div>
+            )}
+
+            {depositing && (
+              <div className="flex items-center gap-2.5 text-[14px] text-gray-700 font-medium py-2">
+                <Loader2 size={18} className="animate-spin text-[#059669]" />
+                Moving {naira(AMOUNT)} into the vault…
+              </div>
+            )}
+
+            {isFunded && (
+              <div className="flex items-start gap-3 text-[13px] text-gray-700 leading-[1.5]">
+                <Truck size={18} className="text-[#059669] mt-0.5 shrink-0" />
+                <span>
+                  Paid and protected. Sit tight while {sellerFirst} delivers your {vault.info.item} —
+                  you'll release payment once it's in your hands.
+                </span>
+              </div>
+            )}
+
+            {isDelivered && !vault.releaseQr && !releasing && (
+              <div>
+                <p className="text-[13px] text-gray-600 leading-[1.5] mb-4">
+                  Got your {vault.info.item} and it's exactly as agreed? Reveal your one-time QR so{" "}
+                  {sellerFirst} can release the funds.
+                </p>
+                <button
+                  onClick={onShowQr}
+                  className="bg-gray-900 hover:bg-gray-800 text-white text-[14px] font-medium rounded-full px-5 py-2.5 inline-flex items-center gap-2 transition-colors"
+                  style={{ animation: "ring 1.6s ease-out infinite" }}
+                >
+                  <QrCode size={16} className="text-[#34D399]" /> Release payment
+                </button>
+              </div>
+            )}
+
+            {isDelivered && vault.releaseQr && !releasing && (
+              <div className="flex flex-col sm:flex-row items-start gap-5">
+                <div className="rounded-2xl border border-gray-200 p-3 bg-white shrink-0">
+                  <FakeQR />
+                  <div className="text-center text-[11px] text-gray-500 mt-1.5">
+                    Your release QR · expires 60s
+                  </div>
+                </div>
+                <div className="flex-1 text-[13px] text-gray-600 leading-[1.5]">
+                  <div className="inline-flex items-center gap-1.5 text-gray-500 font-medium">
+                    <Loader2 size={13} className="animate-spin" /> Waiting for {sellerFirst} to
+                    scan…
+                  </div>
+                  <p className="mt-1.5">
+                    Show this one-time code to {sellerFirst}. When she scans it,{" "}
+                    <b className="text-gray-900">{naira(AMOUNT)}</b> is released from the vault.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {releasing && (
+              <div className="flex items-center gap-2.5 text-[14px] text-gray-700 font-medium py-2">
+                <Loader2 size={18} className="animate-spin text-[#059669]" />
+                Releasing {naira(AMOUNT)} to {sellerFirst}…
+              </div>
+            )}
+
+            {isReleased && (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-2xl bg-[#34D399]/10 border border-[#34D399]/30 p-4 flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-full bg-[#34D399] flex items-center justify-center shrink-0">
+                    <BadgeCheck size={18} className="text-gray-900" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-semibold text-gray-900 tabular-nums">
+                      Delivery confirmed
+                    </div>
+                    <div className="text-[12px] text-gray-600">
+                      {naira(AMOUNT)} released to {sellerFirst} · trust score +2
+                    </div>
+                  </div>
+                </div>
+                {vault.invoiceNo && (
+                  <div className="rounded-xl border border-gray-200 p-3 flex items-center gap-3">
+                    <FileText size={16} className="text-[#059669] shrink-0" />
+                    <span className="text-[13px] text-gray-700">
+                      Receipt <b className="text-gray-900">{vault.invoiceNo}</b> saved to your account
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Seller card */}
+          <div className="glass-card p-6">
+            <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <Users size={13} /> Who you're trading with
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Avatar name={SELLER_NAME} accent />
+                <div>
+                  <div className="text-[14px] font-medium text-gray-900">{SELLER_NAME}</div>
+                  <div className="text-[12px] text-gray-600">Seller · Chioma Fashion</div>
+                </div>
+              </div>
+              <TrustScoreBadge score={sellerScore} />
+            </div>
+            <p className="mt-3 text-[12.5px] text-gray-600 leading-[1.5]">
+              You can see {sellerFirst}'s trust score before any money moves. A high score means a
+              long record of completed, dispute-free trades.
+            </p>
+          </div>
+        </div>
+
+        {/* Right column — activity */}
+        <div className="glass-card p-6 lg:sticky lg:top-24">
+          <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <Bell size={13} /> Activity
+          </div>
+          <ol className="flex flex-col gap-0">
+            {vault.events.map((ev, i) => (
+              <li
+                key={ev.id}
+                className="flex gap-3"
+                style={i === 0 ? { animation: "fadeUp .35s ease both" } : undefined}
+              >
+                <div className="flex flex-col items-center">
+                  <span className={`w-2.5 h-2.5 rounded-full mt-1.5 ${dotClass(ev.kind)}`} />
+                  {i < vault.events.length - 1 && <span className="w-px flex-1 bg-gray-200 my-1" />}
+                </div>
+                <div
+                  className={`pb-4 text-[13px] ${i === 0 ? "text-gray-900 font-medium" : "text-gray-600"}`}
+                >
+                  {ev.text}
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          {reachedPay && !isReleased && (
+            <div className="mt-2 pt-5 border-t border-gray-100">
+              <div className="rounded-2xl bg-[#34D399]/10 border border-[#34D399]/30 p-4 flex items-start gap-3">
+                <BadgeCheck size={20} className="text-[#059669] mt-0.5 shrink-0" />
+                <div className="text-[13px] text-gray-800 leading-[1.5]">
+                  You're protected. {naira(AMOUNT)} is locked safely — it only reaches {sellerFirst}{" "}
+                  when you release it on delivery.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isReleased && (
+            <div className="mt-2 pt-5 border-t border-gray-100">
+              <div className="rounded-2xl bg-gray-900 text-white p-4 flex items-start gap-3">
+                <BadgeCheck size={20} className="text-[#34D399] mt-0.5 shrink-0" />
+                <div className="text-[13px] leading-[1.55]">
+                  Done. You received the {vault.info.item} and released {naira(AMOUNT)} —{" "}
+                  <span className="text-[#34D399]">buyer protected, seller paid</span>, fully
+                  recorded.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- buyer presenter controls (drives the seller's side) ----------
+
+function BuyerPresenterControls({
+  vault,
+  anim,
+  onSellerApprove,
+  onSellerDeliver,
+  onSellerRelease,
+  onReset,
+}: {
+  vault: Vault;
+  anim: null | "deposit" | "release";
+  onSellerApprove: () => void;
+  onSellerDeliver: () => void;
+  onSellerRelease: () => void;
+  onReset: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const sellerFirst = SELLER_NAME.split(" ")[0];
+
+  const reachedJoined = ["buyerJoined", "funded", "delivered", "released"].includes(vault.status);
+  const reachedDelivered = ["delivered", "released"].includes(vault.status);
+  const reachedReleased = vault.status === "released";
+
+  const canApprove = vault.status === "awaiting" && vault.joinRequest;
+  const canDeliver = vault.status === "funded" && anim !== "deposit";
+  const canRelease = vault.status === "delivered" && vault.releaseQr && anim !== "release";
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed z-40 left-4 bottom-4 bg-gray-900 text-white rounded-full px-4 py-2.5 text-[13px] font-medium shadow-xl inline-flex items-center gap-2"
+      >
+        <Settings2 size={15} className="text-[#34D399]" /> Demo control guide
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed z-40 left-4 bottom-4 w-[calc(100%-2rem)] sm:w-[320px]">
+      <div className="glass-dark text-white overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-2 border-b border-white/10">
+          <Settings2 size={15} className="text-[#34D399]" />
+          <span className="text-[13px] font-semibold">Demo control guide</span>
+          <button
+            onClick={() => setOpen(false)}
+            className="ml-auto text-gray-400 hover:text-white"
+            aria-label="Hide"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div className="p-3 flex flex-col gap-2">
+          <p className="text-[11px] text-gray-400 px-1 leading-[1.45]">
+            This guide drives {sellerFirst}'s side of the demo for you. Take your own actions on the
+            left, then tap each step here — they stand in for what {sellerFirst} does on her phone.
+          </p>
+
+          <ControlButton
+            label={`1 · ${sellerFirst} approves your request`}
+            note="Do this after you ask to join"
+            icon={UserPlus}
+            disabled={!canApprove}
+            done={reachedJoined}
+            onClick={onSellerApprove}
+          />
+          <ControlButton
+            label={`2 · ${sellerFirst} marks it delivered`}
+            note="Do this after you pay into escrow"
+            icon={Truck}
+            disabled={!canDeliver}
+            done={reachedDelivered}
+            onClick={onSellerDeliver}
+          />
+          <ControlButton
+            label={`3 · ${sellerFirst} scans QR & releases`}
+            note="Do this after you show the release QR"
+            icon={ScanLine}
+            disabled={!canRelease}
+            done={reachedReleased}
+            onClick={onSellerRelease}
+          />
+
+          <button
+            onClick={onReset}
+            className="mt-1 text-[12px] text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1.5 px-1"
+          >
+            <RotateCcw size={13} /> Reset this deal
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ---------- dashboard ----------
 
-function Dashboard({
-  user,
-  vault,
-  balance,
-  onOpenVault,
-  onOpenExisting,
+/** Aggregate the demo history into the headline metrics shown on the dashboard. */
+function useDashboardStats(role: User["role"]) {
+  const txs = demoTransactions(role);
+  const monthly = demoMonthly(role);
+  const released = txs.filter((t) => t.status === "released");
+  const lifetime = monthly.reduce((s, m) => s + m.value, 0) * 1000;
+  const thisMonth = monthly[monthly.length - 1].value * 1000;
+  const prevMonth = monthly[monthly.length - 2].value * 1000;
+  const momPct = prevMonth ? Math.round(((thisMonth - prevMonth) / prevMonth) * 100) : 0;
+  const successRate = Math.round((released.length / txs.length) * 100);
+  return { txs, monthly, released, lifetime, thisMonth, momPct, successRate };
+}
+
+function PageHeading({
+  badge,
+  title,
+  subtitle,
+  action,
 }: {
-  user: { name: string };
-  vault: Vault | null;
-  balance: number;
-  onOpenVault: () => void;
-  onOpenExisting: () => void;
+  badge: string;
+  title: string;
+  subtitle: string;
+  action?: React.ReactNode;
 }) {
-  const firstName = user.name.split(" ")[0];
   return (
-    <div style={{ animation: "fadeUp .5s ease both" }}>
-      <Badge>Your vaults</Badge>
-      <div className="mt-4 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] sm:text-[32px] font-medium text-gray-900 tracking-[-0.02em]">
-            Welcome, {firstName} 👋
-          </h1>
-          <p className="mt-2 text-[15px] text-gray-600">
-            {vault
-              ? "Here are the vaults you've opened."
-              : "Open a vault to protect your next deal."}
+    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div>
+        <Badge>{badge}</Badge>
+        <h1 className="mt-3 text-[26px] sm:text-[30px] font-medium text-gray-900 tracking-[-0.02em]">
+          {title}
+        </h1>
+        <p className="mt-1.5 text-[14.5px] text-gray-600 max-w-[60ch]">{subtitle}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function OpenVaultButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[14px] font-medium rounded-full pl-5 pr-2 py-2.5 inline-flex items-center gap-3 transition-colors self-start shrink-0"
+    >
+      <span className="inline-flex items-center gap-2">
+        <Plus size={16} /> Open vault
+      </span>
+      <span className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center transition-transform duration-500 group-hover:-rotate-45">
+        <VaultIcon size={14} className="text-[#34D399]" />
+      </span>
+    </button>
+  );
+}
+
+function ViewAll({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-[12px] font-medium text-[#059669] hover:underline inline-flex items-center gap-1"
+    >
+      View all <ChevronRight size={13} />
+    </button>
+  );
+}
+
+function BalanceHero({
+  balance,
+  role,
+  onPrimary,
+  className = "",
+}: {
+  balance: number;
+  role: User["role"];
+  onPrimary?: () => void;
+  className?: string;
+}) {
+  const isSeller = role === "seller";
+  return (
+    <div className={`glass-dark text-white p-6 sm:p-7 relative overflow-hidden flex flex-col ${className}`}>
+      <div
+        className="pointer-events-none absolute -top-24 -right-24 w-[300px] h-[300px] rounded-full opacity-30 blur-3xl"
+        style={{ background: "radial-gradient(circle, #34D399 0%, transparent 70%)" }}
+      />
+      <div className="relative flex items-center justify-between">
+        <span className="text-[12px] text-gray-400 uppercase tracking-wider">
+          {isSeller ? "Available balance" : "Total protected"}
+        </span>
+        <span className="text-[11px] text-[#34D399] inline-flex items-center gap-1">
+          <ShieldCheck size={12} /> OPay-backed
+        </span>
+      </div>
+      <div className="relative mt-4">
+        <div className="text-[40px] sm:text-[46px] font-medium tracking-tight tabular-nums leading-none">
+          {naira(balance)}
+        </div>
+        <div className="mt-2 text-[12.5px] text-gray-400 inline-flex items-center gap-1.5">
+          <Landmark size={13} className="text-[#34D399]" />
+          {isSeller ? "Settles instantly to OPay •••• 7788" : "Spent safely through escrow"}
+        </div>
+      </div>
+      <div className="relative mt-auto pt-6 flex flex-wrap items-center gap-2.5">
+        {isSeller ? (
+          <>
+            <button
+              onClick={onPrimary}
+              className="bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[13.5px] font-medium rounded-full px-4 py-2 inline-flex items-center gap-2 transition-colors"
+            >
+              <Plus size={15} /> Open vault
+            </button>
+            <button className="bg-white/10 hover:bg-white/20 text-white text-[13.5px] font-medium rounded-full px-4 py-2 inline-flex items-center gap-2 transition-colors">
+              <ArrowUpRight size={15} className="text-[#34D399]" /> Withdraw
+            </button>
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-[#34D399] bg-[#34D399]/15 rounded-full px-3 py-1.5">
+            <BadgeCheck size={13} /> Buyer protection active
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TrustScoreCard({ user, className = "" }: { user: User; className?: string }) {
+  const { label, tone } = trustTier(user.trustScore);
+  const ring = { high: "#34D399", mid: "#F59E0B", low: "#F43F5E" }[tone];
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <SectionLabel icon={ShieldCheck}>Trust score</SectionLabel>
+      <div className="mt-3 flex items-center gap-4">
+        <TrustRing score={user.trustScore} size={92} />
+        <div className="min-w-0">
+          <span
+            className="inline-flex text-[12px] font-semibold rounded-full px-2.5 py-0.5"
+            style={{ backgroundColor: `${ring}26`, color: ring }}
+          >
+            {label}
+          </span>
+          <p className="mt-2 text-[12.5px] text-gray-600 leading-[1.5]">
+            {user.tradesCompleted} completed trades. Counterparties see this before any money moves.
           </p>
         </div>
-        <button
-          onClick={onOpenVault}
-          className="group bg-[#34D399] hover:bg-[#10B981] text-gray-900 text-[14px] font-medium rounded-full pl-6 pr-2 py-2.5 inline-flex items-center gap-3 transition-colors self-start"
-        >
-          <span>Open vault</span>
-          <span className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center transition-transform duration-500 group-hover:-rotate-45">
-            <Wallet size={14} className="text-[#34D399]" />
-          </span>
-        </button>
       </div>
+    </div>
+  );
+}
 
-      {/* Seller wallet — earnings settled from completed vaults, separate from any escrow in progress */}
-      <div className="mt-8 rounded-3xl bg-white p-5 sm:p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)] flex items-center gap-4">
-        <span className="w-12 h-12 rounded-2xl bg-[#34D399]/15 flex items-center justify-center shrink-0">
-          <Wallet size={22} className="text-[#059669]" />
-        </span>
-        <div className="min-w-0">
-          <div className="text-[12px] text-gray-500 uppercase tracking-wider">Available balance</div>
-          <div className="text-[28px] sm:text-[32px] font-medium text-gray-900 tabular-nums tracking-tight leading-tight">
-            {naira(balance)}
-          </div>
-          <div className="text-[12px] text-gray-500 mt-0.5 inline-flex items-center gap-1.5">
-            <Landmark size={12} className="text-[#059669]" /> Settles instantly to OPay •••• 7788
-          </div>
-        </div>
-        <span className="ml-auto shrink-0 hidden sm:inline-flex items-center gap-1.5 text-[11px] text-[#059669] bg-[#34D399]/15 rounded-full px-2.5 py-1">
-          <BadgeCheck size={12} /> Instant payout
-        </span>
+function ChartCard({
+  title,
+  data,
+  highlight,
+  className = "",
+}: {
+  title: string;
+  data: ReturnType<typeof demoMonthly>;
+  highlight: string;
+  className?: string;
+}) {
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <div className="flex items-center justify-between">
+        <SectionLabel icon={TrendingUp}>{title}</SectionLabel>
+        <span className="text-[12px] text-gray-400">last 7 months</span>
       </div>
+      <div className="mt-2 text-[22px] font-medium text-gray-900 tabular-nums">
+        {highlight}
+        <span className="text-[12px] text-gray-400 font-normal ml-1.5">this month</span>
+      </div>
+      <MiniBarChart data={data} className="mt-5" />
+    </div>
+  );
+}
 
+function RecentActivityCard({
+  role,
+  onViewAll,
+  className = "",
+}: {
+  role: User["role"];
+  onViewAll: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <div className="flex items-center justify-between">
+        <SectionLabel icon={Bell}>Recent activity</SectionLabel>
+        <ViewAll onClick={onViewAll} />
+      </div>
+      <ActivityFeed items={demoActivity(role).slice(0, 5)} className="mt-3" />
+    </div>
+  );
+}
+
+function TransactionsCard({
+  role,
+  onViewAll,
+  className = "",
+}: {
+  role: User["role"];
+  onViewAll: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <div className="flex items-center justify-between">
+        <SectionLabel icon={Receipt}>Transaction history</SectionLabel>
+        <ViewAll onClick={onViewAll} />
+      </div>
+      <TransactionTable items={demoTransactions(role).slice(0, 4)} className="mt-2" />
+    </div>
+  );
+}
+
+function ActiveVaultCard({
+  vault,
+  onOpenExisting,
+  onOpenVault,
+  className = "",
+}: {
+  vault: Vault | null;
+  onOpenExisting: () => void;
+  onOpenVault: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <SectionLabel icon={VaultIcon}>Active vault</SectionLabel>
       {vault ? (
         <button
           onClick={onOpenExisting}
-          className="mt-8 w-full text-left rounded-3xl bg-white p-5 sm:p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_32px_rgba(0,0,0,0.10)] transition-shadow flex items-center gap-4"
+          className="mt-4 text-left rounded-2xl border border-gray-200/70 bg-white/50 hover:bg-white p-4 flex items-center gap-3 transition-colors"
         >
-          <span className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center shrink-0">
-            <Laptop size={22} className="text-[#34D399]" />
+          <span className="w-11 h-11 rounded-xl bg-gray-900 flex items-center justify-center shrink-0">
+            <Laptop size={20} className="text-[#34D399]" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-[15px] font-medium text-gray-900">{vault.info.item}</span>
+              <span className="text-[14px] font-medium text-gray-900 truncate">{vault.info.item}</span>
               <StatusPill status={vault.status} />
             </div>
-            <div className="text-[13px] text-gray-500 mt-0.5">
-              {vault.code} · {naira(vault.info.price)} · delivery {vault.info.delivery}
-            </div>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="text-[12px] text-gray-400">In vault</div>
-            <div className="text-[15px] font-semibold text-gray-900 tabular-nums">
-              {naira(vault.balance)}
+            <div className="text-[12px] text-gray-500 mt-0.5 truncate">
+              {vault.code} · {naira(vault.info.price)}
             </div>
           </div>
           <ChevronRight size={18} className="text-gray-300 shrink-0" />
         </button>
       ) : (
-        <div className="mt-8 rounded-3xl border-2 border-dashed border-gray-300 bg-white/40 py-16 flex flex-col items-center text-center">
-          <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center">
-            <Lock size={26} className="text-gray-300" />
-          </div>
-          <p className="mt-5 text-[15px] font-medium text-gray-700">No active vaults</p>
-          <p className="mt-1 text-[13px] text-gray-500 max-w-[36ch]">
-            A vault holds the buyer's money safely until the item is delivered.
+        <button
+          onClick={onOpenVault}
+          className="mt-4 flex-1 min-h-[140px] rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#34D399] bg-white/30 hover:bg-white/50 p-6 flex flex-col items-center justify-center text-center transition-colors"
+        >
+          <span className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+            <Plus size={22} className="text-[#059669]" />
+          </span>
+          <p className="mt-3 text-[14px] font-medium text-gray-800">Open a new vault</p>
+          <p className="mt-1 text-[12px] text-gray-500 max-w-[30ch]">
+            Protect your next deal — AI fills in the details from your chat.
           </p>
-        </div>
+        </button>
       )}
+    </div>
+  );
+}
+
+function BuyerDealCard({
+  vault,
+  onGoDeal,
+  onStart,
+  className = "",
+}: {
+  vault: Vault | null;
+  onGoDeal: () => void;
+  onStart: () => void;
+  className?: string;
+}) {
+  return (
+    <div className={`glass-card p-6 flex flex-col ${className}`}>
+      <SectionLabel icon={ShieldCheck}>Active deal</SectionLabel>
+      {vault ? (
+        <button
+          onClick={onGoDeal}
+          className="mt-4 text-left rounded-2xl border border-gray-200/70 bg-white/50 hover:bg-white p-4 flex items-center gap-3 transition-colors"
+        >
+          <span className="w-11 h-11 rounded-xl bg-gray-900 flex items-center justify-center shrink-0">
+            <Lock size={19} className="text-[#34D399]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] font-medium text-gray-900 truncate">{vault.info.item}</span>
+              <StatusPill status={vault.status} />
+            </div>
+            <div className="text-[12px] text-gray-500 mt-0.5 truncate">
+              {naira(vault.info.price)} · delivery {vault.info.delivery}
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-gray-300 shrink-0" />
+        </button>
+      ) : (
+        <button
+          onClick={onStart}
+          className="mt-4 flex-1 min-h-[140px] rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#34D399] bg-white/30 hover:bg-white/50 p-6 flex flex-col items-center justify-center text-center transition-colors"
+        >
+          <span className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+            <Play size={20} className="text-[#059669]" />
+          </span>
+          <p className="mt-3 text-[14px] font-medium text-gray-800">Start a demo deal</p>
+          <p className="mt-1 text-[12px] text-gray-500 max-w-[32ch]">
+            Walk the full protected flow — join, pay into escrow, then release on delivery.
+          </p>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SellerDashboard({
+  user,
+  vault,
+  balance,
+  onOpenVault,
+  onOpenExisting,
+  onGoActivity,
+}: {
+  user: User;
+  vault: Vault | null;
+  balance: number;
+  onOpenVault: () => void;
+  onOpenExisting: () => void;
+  onGoActivity: () => void;
+  onGoVaults: () => void;
+}) {
+  const { monthly, lifetime, thisMonth, momPct, successRate } = useDashboardStats(user.role);
+  const firstName = user.name.split(" ")[0];
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <PageHeading
+        badge="Dashboard"
+        title={`Welcome back, ${firstName} 👋`}
+        subtitle="Here's how your shop is performing on TrustFlow."
+        action={<OpenVaultButton onClick={onOpenVault} />}
+      />
+
+      <div className="mt-7 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <BalanceHero balance={balance} role="seller" onPrimary={onOpenVault} className="md:col-span-2 lg:col-span-4" />
+        <TrustScoreCard user={user} className="md:col-span-2 lg:col-span-2" />
+
+        <StatCard
+          icon={TrendingUp}
+          label="This month"
+          value={naira(thisMonth)}
+          sub={`${momPct >= 0 ? "+" : ""}${momPct}% vs last month`}
+          trend={momPct >= 0 ? "up" : "down"}
+          className="lg:col-span-2"
+        />
+        <StatCard
+          icon={Wallet}
+          label="Lifetime volume"
+          value={naira(lifetime)}
+          sub="across all vaults"
+          trend="flat"
+          className="lg:col-span-2"
+        />
+        <StatCard
+          icon={BadgeCheck}
+          label="Completed trades"
+          value={String(user.tradesCompleted)}
+          sub={`${successRate}% success rate`}
+          trend="up"
+          className="lg:col-span-2"
+        />
+
+        <ActiveVaultCard
+          vault={vault}
+          onOpenExisting={onOpenExisting}
+          onOpenVault={onOpenVault}
+          className="md:col-span-2 lg:col-span-3"
+        />
+        <ChartCard
+          title="Escrow volume"
+          data={monthly}
+          highlight={naira(thisMonth)}
+          className="md:col-span-2 lg:col-span-3"
+        />
+
+        <RecentActivityCard role={user.role} onViewAll={onGoActivity} className="md:col-span-2 lg:col-span-3" />
+        <TransactionsCard role={user.role} onViewAll={onGoActivity} className="md:col-span-2 lg:col-span-3" />
+      </div>
+    </div>
+  );
+}
+
+function BuyerDashboard({
+  user,
+  vault,
+  onGoActivity,
+  onGoDeal,
+  onStartDeal,
+}: {
+  user: User;
+  vault: Vault | null;
+  onGoActivity: () => void;
+  onGoDeal: () => void;
+  onStartDeal: () => void;
+}) {
+  const { monthly, lifetime, thisMonth, momPct, successRate } = useDashboardStats(user.role);
+  const firstName = user.name.split(" ")[0];
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <PageHeading
+        badge="Dashboard"
+        title={`Welcome back, ${firstName} 👋`}
+        subtitle="Every naira you spend on TrustFlow stays protected until you confirm delivery."
+      />
+
+      <div className="mt-7 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <BalanceHero balance={lifetime} role="buyer" className="md:col-span-2 lg:col-span-4" />
+        <TrustScoreCard user={user} className="md:col-span-2 lg:col-span-2" />
+
+        <StatCard
+          icon={TrendingUp}
+          label="This month"
+          value={naira(thisMonth)}
+          sub={`${momPct >= 0 ? "+" : ""}${momPct}% vs last month`}
+          trend={momPct >= 0 ? "up" : "down"}
+          className="lg:col-span-2"
+        />
+        <StatCard
+          icon={BadgeCheck}
+          label="Purchases"
+          value={String(user.tradesCompleted)}
+          sub={`${successRate}% delivered clean`}
+          trend="up"
+          className="lg:col-span-2"
+        />
+        <StatCard
+          icon={ShieldCheck}
+          label="Disputes won"
+          value="1"
+          sub="full refund recovered"
+          trend="up"
+          className="lg:col-span-2"
+        />
+
+        <BuyerDealCard
+          vault={vault}
+          onGoDeal={onGoDeal}
+          onStart={onStartDeal}
+          className="md:col-span-2 lg:col-span-3"
+        />
+        <ChartCard
+          title="Protected spend"
+          data={monthly}
+          highlight={naira(thisMonth)}
+          className="md:col-span-2 lg:col-span-3"
+        />
+
+        <RecentActivityCard role={user.role} onViewAll={onGoActivity} className="md:col-span-2 lg:col-span-3" />
+        <TransactionsCard role={user.role} onViewAll={onGoActivity} className="md:col-span-2 lg:col-span-3" />
+      </div>
+    </div>
+  );
+}
+
+function VaultsView({
+  user,
+  vault,
+  onOpenVault,
+  onOpenExisting,
+}: {
+  user: User;
+  vault: Vault | null;
+  onOpenVault: () => void;
+  onOpenExisting: () => void;
+}) {
+  const txs = demoTransactions(user.role);
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <PageHeading
+        badge="Vaults"
+        title="Your vaults"
+        subtitle="Active escrow and every deal you've completed on TrustFlow."
+        action={<OpenVaultButton onClick={onOpenVault} />}
+      />
+
+      <div className="mt-7">
+        <SectionLabel icon={Lock}>Active</SectionLabel>
+        {vault ? (
+          <button
+            onClick={onOpenExisting}
+            className="mt-3 w-full text-left glass-card glass-card-hover p-5 flex items-center gap-4"
+          >
+            <span className="w-12 h-12 rounded-2xl bg-gray-900 flex items-center justify-center shrink-0">
+              <Laptop size={22} className="text-[#34D399]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-medium text-gray-900">{vault.info.item}</span>
+                <StatusPill status={vault.status} />
+              </div>
+              <div className="text-[13px] text-gray-500 mt-0.5">
+                {vault.code} · {naira(vault.info.price)} · delivery {vault.info.delivery}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[12px] text-gray-400">In vault</div>
+              <div className="text-[15px] font-semibold text-gray-900 tabular-nums">
+                {naira(vault.balance)}
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-gray-300 shrink-0" />
+          </button>
+        ) : (
+          <button
+            onClick={onOpenVault}
+            className="mt-3 w-full rounded-3xl border-2 border-dashed border-gray-300 hover:border-[#34D399] bg-white/40 py-12 flex flex-col items-center text-center transition-colors"
+          >
+            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+              <Plus size={24} className="text-[#059669]" />
+            </div>
+            <p className="mt-4 text-[15px] font-medium text-gray-700">No active vault</p>
+            <p className="mt-1 text-[13px] text-gray-500 max-w-[36ch]">
+              Open a vault to hold a buyer's money safely until the item is delivered.
+            </p>
+          </button>
+        )}
+      </div>
+
+      <div className="mt-8">
+        <SectionLabel icon={Receipt}>Completed &amp; past vaults</SectionLabel>
+        <div className="mt-3 glass-card p-5 sm:p-6">
+          <TransactionTable items={txs} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityView({ user }: { user: User }) {
+  return (
+    <div style={{ animation: "fadeUp .5s ease both" }}>
+      <PageHeading
+        badge="Activity"
+        title="Activity & history"
+        subtitle="Everything that's happened across your TrustFlow account."
+      />
+      <div className="mt-7 grid lg:grid-cols-2 gap-5 items-start">
+        <div className="glass-card p-6">
+          <SectionLabel icon={Bell}>Recent activity</SectionLabel>
+          <ActivityFeed items={demoActivity(user.role)} className="mt-3" />
+        </div>
+        <div className="glass-card p-6">
+          <SectionLabel icon={Receipt}>Transaction history</SectionLabel>
+          <TransactionTable items={demoTransactions(user.role)} className="mt-2" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -574,8 +1783,8 @@ function MethodStep({ onPickAi }: { onPickAi: () => void }) {
           <span className="absolute top-4 right-4 text-[10px] font-semibold uppercase tracking-wider text-[#059669] bg-[#34D399]/20 rounded-full px-2 py-0.5">
             Recommended
           </span>
-          <div className="w-11 h-11 rounded-xl bg-[#34D399] flex items-center justify-center">
-            <Wand2 size={20} className="text-gray-900" />
+          <div className="w-11 h-11 rounded-xl bg-white shadow-sm flex items-center justify-center">
+            <GeminiLogo size={22} />
           </div>
           <div className="mt-4 text-[16px] font-medium text-gray-900">Prepare with AI</div>
           <p className="mt-1.5 text-[13px] text-gray-600 leading-[1.5]">
@@ -675,7 +1884,7 @@ function UploadStep({
       <div className="mt-7">
         <PrimaryButton onClick={onExtract} disabled={!hasImage}>
           <span className="inline-flex items-center gap-2">
-            <ScanText size={15} /> Extract with Gemini
+            <GeminiLogo size={15} /> Extract with Gemini
           </span>
         </PrimaryButton>
       </div>
@@ -686,8 +1895,8 @@ function UploadStep({
 function ExtractingStep() {
   return (
     <div className="min-h-[300px] flex flex-col items-center justify-center text-center">
-      <div className="w-16 h-16 rounded-2xl bg-gray-900 flex items-center justify-center">
-        <ScanText size={26} className="text-[#34D399]" />
+      <div className="w-16 h-16 rounded-2xl bg-white shadow-md flex items-center justify-center">
+        <GeminiLogo size={30} />
       </div>
       <div className="mt-6 flex items-center gap-2.5 text-[15px] text-gray-700 font-medium">
         <Loader2 size={18} className="animate-spin text-[#059669]" />
@@ -822,7 +2031,7 @@ function VaultLive({
         {/* Left column */}
         <div className="flex flex-col gap-5">
           {/* Escrow balance */}
-          <div className="rounded-3xl bg-gray-900 text-white p-6 sm:p-7 relative overflow-hidden">
+          <div className="glass-dark text-white p-6 sm:p-7 relative overflow-hidden">
             <div
               className="pointer-events-none absolute -top-24 -right-24 w-[300px] h-[300px] rounded-full opacity-30 blur-3xl"
               style={{ background: "radial-gradient(circle, #34D399 0%, transparent 70%)" }}
@@ -895,7 +2104,7 @@ function VaultLive({
           {/* Delivery & release */}
           {(isFunded || isDelivered || isReleased) && (
             <div
-              className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)]"
+              className="glass-card p-6"
               style={{ animation: "fadeUp .4s ease both" }}
             >
               <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
@@ -995,7 +2204,7 @@ function VaultLive({
           )}
 
           {/* Vault code */}
-          <div className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)]">
+          <div className="glass-card p-6">
             <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider">
               Vault code
             </div>
@@ -1027,7 +2236,7 @@ function VaultLive({
           </div>
 
           {/* Participants */}
-          <div className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)]">
+          <div className="glass-card p-6">
             <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
               <Users size={13} /> Participants
             </div>
@@ -1076,7 +2285,7 @@ function VaultLive({
         </div>
 
         {/* Right column — activity */}
-        <div className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.06)] lg:sticky lg:top-24">
+        <div className="glass-card p-6 lg:sticky lg:top-24">
           <div className="text-[12px] font-medium text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
             <Bell size={13} /> Activity
           </div>
@@ -1264,17 +2473,17 @@ function PresenterControls({
         onClick={() => setOpen(true)}
         className="fixed z-40 left-4 bottom-4 bg-gray-900 text-white rounded-full px-4 py-2.5 text-[13px] font-medium shadow-xl inline-flex items-center gap-2"
       >
-        <Settings2 size={15} className="text-[#34D399]" /> Presenter controls
+        <Settings2 size={15} className="text-[#34D399]" /> Demo control guide
       </button>
     );
   }
 
   return (
-    <div className="fixed z-40 left-4 bottom-4 w-[calc(100%-2rem)] sm:w-[300px]">
-      <div className="rounded-2xl bg-gray-900 text-white shadow-2xl overflow-hidden">
+    <div className="fixed z-40 left-4 bottom-4 w-[calc(100%-2rem)] sm:w-[320px]">
+      <div className="glass-dark text-white overflow-hidden">
         <div className="px-4 py-3 flex items-center gap-2 border-b border-white/10">
           <Settings2 size={15} className="text-[#34D399]" />
-          <span className="text-[13px] font-semibold">Presenter controls</span>
+          <span className="text-[13px] font-semibold">Demo control guide</span>
           <button
             onClick={() => setOpen(false)}
             className="ml-auto text-gray-400 hover:text-white"
@@ -1284,29 +2493,31 @@ function PresenterControls({
           </button>
         </div>
         <div className="p-3 flex flex-col gap-2">
-          <p className="text-[11px] text-gray-400 px-1 leading-[1.4]">
-            Drive the buyer's side — these stand in for actions Emeka would take on his own device.
+          <p className="text-[11px] text-gray-400 px-1 leading-[1.45]">
+            This guide drives the buyer's side of the demo for you. Tap each step in order —
+            they stand in for the actions {BUYER.name.split(" ")[0]} would take on his own phone.
+            The active step lights up green.
           </p>
 
           <ControlButton
-            label="Buyer requests to join"
-            note="Step 1 · after you share the code"
+            label="1 · Buyer requests to join"
+            note="Do this after you copy & share the vault code"
             icon={UserPlus}
             disabled={!canJoin}
             done={vault.status !== "awaiting" || vault.joinRequest}
             onClick={onBuyerJoin}
           />
           <ControlButton
-            label={`Buyer deposits ${naira(AMOUNT)}`}
-            note="Step 2 · after you approve"
+            label={`2 · Buyer deposits ${naira(AMOUNT)}`}
+            note="Do this after you approve the join request"
             icon={Wallet}
             disabled={!canDeposit}
             done={reachedFunded}
             onClick={onBuyerDeposit}
           />
           <ControlButton
-            label="Buyer shows release QR"
-            note="Step 3 · after you mark delivered"
+            label="3 · Buyer shows release QR"
+            note="Do this after you mark the item delivered"
             icon={QrCode}
             disabled={!canShowQr}
             done={vault.status === "released" || (vault.status === "delivered" && vault.releaseQr)}

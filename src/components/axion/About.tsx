@@ -1,4 +1,5 @@
 import { ArrowRight, TriangleAlert } from "lucide-react";
+import { Reveal } from "@/components/trustflow/Reveal";
 
 const EASE = "cubic-bezier(0.25,0.1,0.25,1)";
 
@@ -52,21 +53,26 @@ export default function About() {
         </p>
 
         <div className="px-5 sm:px-8 lg:px-12 grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6 lg:gap-7">
-          {SCENARIOS.map((s) => (
-            <div key={s.name} className="rounded-2xl bg-[#F5F5F5] p-6 sm:p-8 flex flex-col gap-5 border-l-[3px] border-red-400">
+          {SCENARIOS.map((s, i) => (
+            <Reveal
+              key={s.name}
+              variant="up"
+              delay={i * 100}
+              className="glass-card p-6 sm:p-8 flex flex-col gap-5 border-l-[3px] border-red-400"
+            >
               <span className="text-[11px] uppercase tracking-[0.18em] text-gray-500">{s.tag}</span>
               <div className="flex items-baseline gap-2">
                 <h3 className="text-[22px] sm:text-[26px] font-medium text-gray-900" style={{ letterSpacing: "-0.015em" }}>
                   {s.name}
                 </h3>
-                <span className="text-[13px] sm:text-[14px] text-gray-500">{s.sub}</span>
+                <span className="text-[13px] sm:text-[14px] text-gray-600">{s.sub}</span>
               </div>
-              <p className="text-[14px] sm:text-[15px] leading-[1.6] text-gray-700">{s.body}</p>
+              <p className="text-[14px] sm:text-[15px] leading-[1.65] text-gray-700">{s.body}</p>
               <div className="mt-auto flex items-center gap-2 text-[13px] font-medium text-red-600">
                 <TriangleAlert size={15} />
                 {s.loss}
               </div>
-            </div>
+            </Reveal>
           ))}
         </div>
 

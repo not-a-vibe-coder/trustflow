@@ -140,7 +140,19 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family:
+      "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+}
+
+/* Display serif used for the wordmark / large numerals (matches reference). */
+.font-display {
+  font-family: "DM Serif Display", ui-serif, Georgia, serif;
+  font-weight: 400;
 }
 
 .liquid-glass {
@@ -167,4 +179,180 @@
   backdrop-filter: blur(50px);
   -webkit-backdrop-filter: blur(50px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------------ *
+ * Glass "jelly" surfaces — frosted cards over the tinted app canvas.
+ * Light variant for content cards, dark variant for accent/feature cards.
+ * ------------------------------------------------------------------ */
+
+.glass-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 4px 24px rgba(15, 40, 30, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.55) inset;
+  transition:
+    transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.glass-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.9),
+    rgba(255, 255, 255, 0.1) 40%,
+    rgba(52, 211, 153, 0.25)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.glass-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 14px 44px rgba(15, 40, 30, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+}
+
+/* Dark frosted variant — deep slate with a teal inner glow. */
+.glass-dark {
+  position: relative;
+  background: linear-gradient(160deg, rgba(17, 24, 28, 0.92), rgba(17, 24, 28, 0.82));
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+.glass-dark::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(52, 211, 153, 0.45),
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(52, 211, 153, 0.12)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Soft tinted gradient canvas — drifting teal blobs behind dashboards.
+ * ------------------------------------------------------------------ */
+
+.app-canvas {
+  position: relative;
+  isolation: isolate;
+  background-color: #eef1f0;
+}
+.app-canvas::before,
+.app-canvas::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+.app-canvas::before {
+  width: 60vw;
+  height: 60vw;
+  top: -18vw;
+  right: -12vw;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.34), transparent 68%);
+  animation: blobDriftA 22s ease-in-out infinite alternate;
+}
+.app-canvas::after {
+  width: 52vw;
+  height: 52vw;
+  bottom: -20vw;
+  left: -14vw;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.22), transparent 68%);
+  animation: blobDriftB 26s ease-in-out infinite alternate;
+}
+
+@keyframes blobDriftA {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-6vw, 6vw, 0) scale(1.12);
+  }
+}
+@keyframes blobDriftB {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(7vw, -5vw, 0) scale(1.1);
+  }
+}
+
+/* Hide scrollbar (mobile nav strip) while keeping scroll behaviour. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * On-scroll / on-view reveal animations.
+ * ------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.reveal-up {
+  transform: translateY(22px);
+}
+.reveal-scale {
+  transform: scale(0.96);
+}
+.reveal-in.reveal-up,
+.reveal-in.reveal-scale {
+  transform: none;
+}
+.reveal-in {
+  opacity: 1;
+  transition:
+    opacity 0.7s cubic-bezier(0.25, 0.1, 0.25, 1),
+    transform 0.7s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-canvas::before,
+  .app-canvas::after {
+    animation: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }

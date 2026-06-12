@@ -1,4 +1,6 @@
 import { Lock, Sparkles, Fingerprint, Check } from "lucide-react";
+import { GeminiLogo } from "@/components/trustflow/GeminiLogo";
+import { Reveal } from "@/components/trustflow/Reveal";
 
 const LAYERS = [
   {
@@ -68,9 +70,11 @@ export default function ValueProps() {
 
         <div className="px-5 sm:px-8 lg:px-12 grid grid-cols-1 md:grid-cols-3 gap-5 sm:gap-6 lg:gap-7">
           {LAYERS.map(({ icon: Icon, name, protects, points, powered }, i) => (
-            <div
+            <Reveal
               key={name}
-              className="group relative overflow-hidden rounded-2xl bg-gray-900 text-white p-7 sm:p-8 flex flex-col gap-6 transition-transform duration-500 hover:-translate-y-1"
+              variant="up"
+              delay={i * 90}
+              className="group relative overflow-hidden glass-dark text-white p-7 sm:p-8 flex flex-col gap-6 transition-transform duration-500 hover:-translate-y-1"
               style={{ transitionTimingFunction: "cubic-bezier(0.25,0.1,0.25,1)" }}
             >
               <div
@@ -79,7 +83,7 @@ export default function ValueProps() {
               />
               <div className="relative flex items-center justify-between">
                 <div className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                  <Icon size={18} className="text-[#34D399]" />
+                  {powered ? <GeminiLogo size={20} /> : <Icon size={18} className="text-[#34D399]" />}
                 </div>
                 <span className="text-[11px] font-mono text-gray-500 tracking-wider">
                   LAYER 0{i + 1}
@@ -92,19 +96,19 @@ export default function ValueProps() {
                 <span className="text-[12px] sm:text-[13px] text-[#34D399]">{protects}</span>
                 {powered && (
                   <span className="mt-2 inline-flex items-center gap-1.5 self-start text-[10px] text-gray-300 bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
-                    <Sparkles size={11} className="text-[#34D399]" /> Powered by Google Gemini
+                    <GeminiLogo size={12} /> Powered by Google Gemini
                   </span>
                 )}
               </div>
               <ul className="relative flex flex-col gap-3 mt-1">
                 {points.map((p) => (
-                  <li key={p} className="flex items-start gap-2.5 text-[13px] sm:text-[13.5px] text-gray-400 leading-[1.5]">
+                  <li key={p} className="flex items-start gap-2.5 text-[13px] sm:text-[13.5px] text-gray-300 leading-[1.5]">
                     <Check size={15} className="text-[#34D399] shrink-0 mt-0.5" />
                     {p}
                   </li>
                 ))}
               </ul>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

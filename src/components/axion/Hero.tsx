@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, Clock, Menu, ShieldCheck, Sparkles, XIcon } from "lucide-react";
+import { ArrowRight, Clock, Menu, ShieldCheck, XIcon } from "lucide-react";
 import { ChromaFlow, FilmGrain, FlutedGlass, Shader, Swirl } from "shaders/react";
+import { GeminiLogo } from "@/components/trustflow/GeminiLogo";
 
 const NAV_LINKS = [
   { label: "The problem", href: "#problem" },
@@ -249,7 +250,7 @@ export default function Hero() {
             onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)")}
             onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)")}
           >
-            <Sparkles className="w-5 h-5 sm:w-5 sm:h-5 text-[#059669]" />
+            <GeminiLogo size={18} />
             <span className="text-[13px] sm:text-[14px] font-medium text-gray-900">Powered by Google Gemini</span>
           </div>
         </div>
